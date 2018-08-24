@@ -1,16 +1,16 @@
 # Jekyll configuration
 
-name: Blog Name
+name: PPL's technology
 description: Software Developer
 
 # Url is currently only used only for the RSS feed in feed.xml
-url: http://streetturtle.github.io
+url: http://a120209520.github.io
 #url: http://localhost:4000
 
 # For a project page here should be a project name. Otherwise (for user's/organization's page leave it empty)
-baseurl: '/jekyll-clean-dark'
+baseurl: '/ppl.github.io'
 
-author: Pavel Makhov
+author: PPL
 copyright: 2015-2018
 
 share:
