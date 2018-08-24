@@ -1,15 +1,21 @@
----
-layout: default
----
+{% include header.html %}
 
-{% include page-intro.html %}
-
-<main id="main" class="page-content" aria-label="Content">
-  <div class="inner">
-    <article class="entry-wrap">
-      <div class="entry-content">
-        {{ content }}
+    <div class="wrapper">
+      <div class="content">
+        <div class="container container-center">
+          <div class="row">
+            <div class="col-md-8 offset-md-1">
+              <div class="card">
+                {{ content }}
+              </div>
+            </div>
+            <div class="col-md-3 hidden-xs">
+              {% include sidebar.html %}
+            </div>
+          </div>
+        </div>
       </div>
-    </article>
-  </div>
-</main>
+      {% include footer.html %}
+    </div>
+  </body>
+</html>
