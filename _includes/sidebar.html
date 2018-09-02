@@ -1,8 +1,22 @@
 <div class="sidebar ">
-  <h2>Recent Posts</h2>
+  {% if page.tags.size == 1 %}
+    <h2>Related By Tag</h2>
+  {% elsif page.tags.size > 1 %}
+    <h2>Related By Tags</h2>
+  {% endif %}
+
   <ul>
-    {% for post in site.posts limit:5 %}
-    <li><a href="{{ post.url | relative_url }}">{{ post.title }}</a></li>
+    {% assign posts = site.posts | sort: 'title' %}
+    {% for post in posts %}
+      {% assign isAdded = false %}
+      {% for tagAll in post.tags %}
+        {% for tag in page.tags %}
+          {% if tagAll == tag and page.title != post.title and isAdded == false %}
+            <li><a href="{{ post.url | prepend: site.url }}">{{ post.title }}</a></li>
+            {% assign isAdded = true %}
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
     {% endfor %}
   </ul>
 </div>
@@ -12,9 +26,9 @@
   <ul class="sideBarTags">
     {% assign tags = (site.tags | sort:0) %}
     {% for tag in tags %}
-    <li>
-      <a href="{{ '/tag/' | append: tag[0] | relative_url }}" data-toggle="tooltip" data-placement="right" title="{{ tag[1].size }}">
-        <span>{{tag[0] }}</span></a></li>
+      <li>
+        <a href="/tag/{{ tag[0] }}" data-toggle="tooltip" data-placement="right" title="{{ tag[1].size }}">
+          <span>{{tag[0] }}</span></a></li>
     {% endfor %}
   </ul>
 </div>
