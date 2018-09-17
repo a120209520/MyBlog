@@ -1,0 +1,211 @@
+---
+layout: post
+title: Java异步通信设计——实现回调
+date:   2018-09-17 23:02
+comments: true
+description: demo
+tags:
+- GWT
+---
+
+>**001——需求**
+
+&emsp;&emsp;项目开发中遇到一个需求，简单来说就是在服务器上设计一个异步框架，使`服务器A`能同时给多个`终端B1,B2...Bn`发送命令，并且在`终端Bi`响应后调用对应的`回调方法Ci`，如图所示：
+<br>
+![需求]({{ '/images/1-1.png' | relative_url }})
+<hr>
+&emsp;&emsp;当然可以直接使用成熟的异步框架，比如`asyn4j`，但是这里的需求并不复杂，不如手撸一个吧!&emsp;
+*(°0°)*<br><br>
+需求分析：
+- 如何实现异步————可以让每个命令包含一个唯一`id`，用于终端响应时进行区分；
+
+- 如何保证并发环境下的id分配————这里需要使用一个`注册中心`来完成命令id的分配和回收；
+
+- 如何实现回调————这里是整个框架的核心，最终我采用的方法是让所有发送任务类都实现一个`CallBack`接口，然后在注册中心中将命令id和对象绑定起来，在接收任务时就能根据id就能找到相应对象的回调；
+
+- 如何实现消息分发————很容易想到用`BlockingQueue`实现。
+    
+&emsp;&emsp;基本结构如图所示：
+
+![框架]({{ '/images/1-2.png' | relative_url }})
+
+
+>结构清晰了，Talk is cheap，Let's show you the **code** (简化后的核心代码)：
+{: .note}
+
+>**002——Callback接口**
+
+>CallBack.java
+{:.filename}
+{% highlight java linenos%}
+//每个任务都要实现CallBack接口，用于回调
+public interface CallBack<P,R> {
+    R process(P param);
+}
+{% endhighlight %}
+
+>**003——发送任务TaskA**
+
+>SendTask.java
+{:.filename}
+{% highlight java linenos%}
+/**
+ * 发送任务
+ * 实现了CallBack<byte[], Boolean>接口，入参是byte[]，
+ * 用于读取终端响应的字节流数据，返回值Bolean表示是否执行成功
+ */
+public class SendTask implements CallBack<byte[], Boolean> {
+    
+    //启动入口
+    public void run() {
+        ThreadPool.submit(new TaskA.SendCmd());
+    }
+    
+    //任务
+    class SendCmd implements Runnable {
+        @Override
+        public void run() {
+            //注册ID
+            int id = IdGenerator.alloc();
+            //将this对象与ID绑定在一起
+            AsynControlCenter.register(id, TaskA.this);
+            //发送命令
+            System.out.println("发送成功！");
+        }
+    }
+
+    //回调处理
+    @Override
+    public Boolean process(byte[] param) {
+        //解析终端响应的数据
+        if(isSuccess(param)) {
+            System.out.println("响应成功！");
+            return true;
+        } else {
+            System.out.println("响应失败！");
+            return false;
+        }
+    }
+}
+{% endhighlight %}
+
+>**004——注册中心AsynControlCenter和ID生成器IdGenerator**
+
+&emsp;&emsp;注册中心有两个功能：
+- 分配和回收ID
+- 绑定ID和Task对象
+<br>
+
+&emsp;&emsp;考虑到并发，使用以下两个类来完成功能：
+
+>IdGenerator.java
+{:.filename}
+{% highlight java linenos%}
+/**
+ * ID生成器
+ * 用于分配及回收ID，ID作为唯一标识，在并发情况下必须同步
+ * 由于分配过程耗时极低，因此考虑将整个方法synchronized
+ */
+public class IdGenerator {
+    public static final int INIT_ID = 0x64;
+    public static final int MAX_ID = 0xFFFFFF00;
+    private static int count = INIT_ID;
+    private static Map<Integer, Boolean> idMap = new HashMap<>();
+
+    //发送任何QxCmd时统一在这里分配RequestId
+    public static synchronized int alloc() {
+        if(count >= MAX_ID)
+            count = INIT_ID;
+        while (idMap.containsKey(count))
+            count++;
+        idMap.put(count, true);
+        return count;
+    }
+
+    //在异步消息处理完成后需要释放资源，否则RequsetId会无限制增长
+    public static synchronized void free(int id) {
+        idMap.remove(id);
+        count = id;
+    }
+}
+{% endhighlight %}
+
+>AsynControlCenter.java
+{:.filename}
+{% highlight java linenos%}
+/**
+ * 异步任务注册中心
+ * 用于绑定命令ID和任务对象，在并发情况下必须同步
+ * 由于分配过程耗时极低，因此考虑将整个方法synchronized
+ */
+public class AsynControlCenter {
+
+    //异步任务注册表
+    private static Map<Integer, CallBack> asynMap = new HashMap<>();
+
+    public static synchronized void register(int id, CallBack callBack) {
+        asynMap.put(id, callBack);
+    }
+
+    public static synchronized CallBack resume(int id) {
+        CallBack callBack = asynMap.get(id);
+        asynMap.remove(id);  //获取对象后，要清除资源
+        return callBack;
+    }
+}
+{% endhighlight %}
+
+>**005——接受任务RecvMsgTask**  
+
+>RecvTask.java
+{:.filename}
+{% highlight java linenos%}
+/**
+ * 接收任务
+ * 用于从终端接收命令，并推入消息队列
+ */
+public class RecvTask implements Runnable {
+    @Override
+    public void run() {
+        while (connector.isConnected()) {
+            byte[] data = connector.recvMsg();
+            if (data == null)
+                break;
+            int id = Cmd.getIdFromData(data);
+            //消息入队
+            MessageQueue.put(new MsgNode(id, data));
+        }
+    }
+}
+{% endhighlight %}
+
+>**006——消息队列MessageQueue**
+
+>MessageQueue.java
+{:.filename}
+{% highlight java linenos%}
+/**
+ * 阻塞消息队列
+ */
+public class MessageQueue {
+    private static BlockingQueue<MsgNode> blockingQueue = new LinkedBlockingQueue<>();
+
+    public static void put(MsgNode qxMsg) {
+        try {
+            blockingQueue.put(qxMsg);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static MsgNode take() {
+        try {
+            return blockingQueue.take();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+}
+{% endhighlight %}
+
