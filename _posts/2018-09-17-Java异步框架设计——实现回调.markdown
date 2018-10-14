@@ -13,7 +13,7 @@ tags:
 
 &emsp;&emsp;项目开发中遇到一个需求，简单来说就是在服务器上设计一个异步框架，使`服务器A`能同时给多个`终端B1,B2...Bn`发送命令，并且在`终端Bi`响应后调用对应的`回调方法Ci`，如图所示：
 <br>
-![需求]({{ '/images/1-1.png' | relative_url }})
+![需求]({{ '/images/blog/1-1.png' | relative_url }})
 <hr>
 &emsp;&emsp;当然可以直接使用成熟的异步框架，比如`asyn4j`，但是这里的需求并不复杂，不如手撸一个吧!&emsp;
 *(°0°)*<br><br>
@@ -28,7 +28,7 @@ tags:
     
 &emsp;&emsp;基本结构如图所示：
 
-![框架]({{ '/images/1-2.png' | relative_url }})
+![框架]({{ '/images/blog/1-2.png' | relative_url }})
 
 
 >结构清晰了，Talk is cheap，Let's show you the **code** (简化后的核心代码)：

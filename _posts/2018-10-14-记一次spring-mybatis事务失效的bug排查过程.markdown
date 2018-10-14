@@ -39,7 +39,7 @@ tags:
 - 然后检查数据库引擎是否是`Innodb`，如果是`MyIsam`则不支持事务（这一点直接pass，重构前事务是正常的）
 
 &emsp;&emsp;检查了以上都没有查出原因，接下来打开`log4j`的`debug`扫一遍：
-![框架]({{ '/images/2-1.png' | relative_url }})
+![框架]({{ '/images/blog/2-1.png' | relative_url }})
 
 &emsp;&emsp;发现事务实际上是回滚了的，但是数据库还是变化了，这就很诡异了= =<br>
 &emsp;&emsp;猜测这种情况很可能是`TransactionManager`绑错了对象，根本没有对这个DataSource真正回滚。<br>
