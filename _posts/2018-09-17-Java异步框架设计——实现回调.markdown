@@ -1,11 +1,12 @@
 ---
 layout: post
-title: Java异步通信设计——实现回调
+title: Java异步框架设计——实现回调
 date:   2018-09-17 23:02
 comments: true
 description: demo
 tags:
-- GWT
+- java
+- 手写框架
 ---
 
 >**001——需求**
