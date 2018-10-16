@@ -1,10 +1,11 @@
 ---
 layout: post
-title: 记一次spring-mybatis事务失效的bug排查过程
+title: 记一次Spring-Mybatis事务失效的bug排查过程
 date:   2018-10-14 21:59
 comments: true
-description: demo
+description: 重构过程遇到的一个坑，特此记录
 tags:
+- java
 - spring
 - mybatis
 - 坑

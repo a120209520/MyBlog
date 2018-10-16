@@ -5,7 +5,6 @@ date:   2018-09-02 21:56
 comments: true
 description: demo
 tags:
-- GWT
 ---
 
 记录搭建Blog时常用的配置和格式：
@@ -27,7 +26,7 @@ tags:
 - 带个标点
 
 普通文本中间插入一个`特殊标记`，或者超链接[github](https://github.com/a120209520)，还有 *斜体*，**粗体**
-
+&emsp;&emsp;普通文本加上段落开头
 {% highlight bash %}
 插入一个文本框
 {% endhighlight bash %}
