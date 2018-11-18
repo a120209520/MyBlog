@@ -3,7 +3,7 @@ layout: post
 title: MySQL优化总结(一)——EXPLAIN详解
 date:   2018-11-18 15:54
 comments: true
-description: 整理MySQL优化的重点，第一部分先介绍EXPALIN语句
+description: 详细介绍EXPALIN语句的十大参数具体含义
 tags:
 - mysql
 ---
@@ -11,7 +11,6 @@ tags:
 # 1. MySQL优化概述
 
 &emsp;&emsp; `MySQL`优化是门很深的学问，涉及到的方面非常广，一直没有时间来总结，趁今天有空把掌握的、理解的一部分内容重新梳理一下吧，主要是`EXPALIN`语句和`索引优化`两大部分.
-## 1.1 MySQL优化的大方向
 
 &emsp;&emsp;影响数据库性能主要划分为以下几个方面:
 - 服务器硬件: 比如CPU， 内存， 硬盘IO， 网卡等
@@ -20,41 +19,6 @@ tags:
 - 慢查询优化(重点): 比如由于SQL语句书写不当导致索引失效， 长时间锁表等
 
 &emsp;&emsp;后端开发通常需要关注的重点是`慢查询优化`，一方面是如何找到哪条语句是慢查询，另一方面则是如何优化慢查询.而其中最重要，对性能影响最大的一点就是: `索引`.
-
-## 1.2 索引的原理
-
-&emsp;&emsp;索引分为`单值索引`和`复合索引`， 同时根据字段是否有重复分为`唯一索引`和`非唯一索引`
-- `单值索引`: 关键字只有一个字段`k`， 通过这个`k`就映射了对应的数据(如果唯一索引就是一行， 非唯一索引就是多行)， 因此我们可以很快地根据`k`来筛选数据(WHERE)， 或对数据排序(ORDER BY，GROUP BY);<br>
-- `复合索引`: 关键字是一组字段`k1`，`k2`，`k3`...， 按顺序一层层进行整理， 可以让我们以多个筛选条件快速地筛选数据或对数据排序， 比如...WHERE k1=1 AND k2=2 AND k3=3;
-
-<hr>
-
-&emsp;&emsp;单值索引比较好理解， 本质其实就是一颗树或者Hash表， 那么复合索引的结构到底是怎样的呢?
-![复合索引原理]({{ '/images/blog/4-1.png' | relative_url }})
-
-&emsp;&emsp;图中以`id`-->`职位`-->`生日`的顺序建立的复合索引， 假设我们要搜索`id=10003`，`职位=Staff`，`生日=1997-08-03`的数据，首先按顺序会先检索`id=10003`， 而不会管其他索引， 因此定位到了右下角那两个`id=10003`的值， 缩小范围后再依次进行职位， 生日进行检索， 最终找到数据.
-
-## 1.3 索引的CRUD
-&emsp;&emsp;这部分直接贴语句:
->index.sql
-{:.filename}
-{% highlight sql linenos%}
--- 查看
-    SHOW INDEX FROM tableName;
--- 新建
-    CREATE [UNIQUE] INDEX indexName ON tableName(colName(length));  --普通索引
-    ALTER TABLE tableName ADD INDEX [indexName] (colName(length));  --普通索引
-    ALTER TABLE tableName ADD UNIQUE [indexName] (colName(length));  --唯一索引
-    ALTER TABLE tableName ADD FULLTEXT [indexName] (colName(length));  --全文索引
-    ALTER TABLE tableName ADD PRIMARY KEY (colName(length));  --主键索引
--- 删除
-    DROP INDEX [indexName] ON tableName;
-{% endhighlight %}
-<hr>
-
-&emsp;&emsp; 要强调的一点是， `索引长度(length)`表示的是字符类型通常不需要索引整个字符串， 它底层采用的是类似于字典树的结构， 会拆分每个字符进行索引， 因此可以指定索引的长度; 而对于整型字段， 这个长度是固定的， 不用指定.<br><br>
-&emsp;&emsp; 另外全文索引是用于在文章中搜索是否包含指定关键字的类似功能， 其底层结构并不是树或Hash表， 具体结构暂时还没研究过.
-
 
 # 2. EXPLAIN
 &emsp;&emsp; `EXPLAIN`语句是用于分析当前`SQL`语句的常用工具， 下面逐一详细介绍其各个属性的含义:

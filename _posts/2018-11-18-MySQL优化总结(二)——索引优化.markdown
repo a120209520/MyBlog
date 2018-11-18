@@ -1,0 +1,338 @@
+---
+layout: post
+title: MySQL优化总结(二)——索引优化
+date:   2018-11-18 21:12
+comments: true
+description: 介绍索引原理及优化原则
+tags:
+- mysql
+---
+
+# 1. 索引基础
+
+## 1.1 索引的原理
+
+&emsp;&emsp;索引分为`单值索引`和`复合索引`， 同时根据字段是否有重复分为`唯一索引`和`非唯一索引`
+- `单值索引`: 关键字只有一个字段`k`， 通过这个`k`就映射了对应的数据(如果唯一索引就是一行， 非唯一索引就是多行)， 因此我们可以很快地根据`k`来筛选数据(WHERE)， 或对数据排序(ORDER BY，GROUP BY);<br>
+- `复合索引`: 关键字是一组字段`k1`，`k2`，`k3`...， 按顺序一层层进行整理， 可以让我们以多个筛选条件快速地筛选数据或对数据排序， 比如...WHERE k1=1 AND k2=2 AND k3=3;
+
+<hr>
+
+&emsp;&emsp;`单值索引`比较好理解， 本质其实就是一颗树或者Hash表， 那么`复合索引`的结构到底是怎样的呢?
+![复合索引原理]({{ '/images/blog/4-1.png' | relative_url }})
+
+&emsp;&emsp;图中以`id`-->`职位`-->`生日`的顺序建立的复合索引， 假设我们要搜索`id=10003`，`职位=Staff`，`生日=1997-08-03`的数据，首先按顺序会先检索`id=10003`， 而不会管其他索引， 因此定位到了右下角那两个`id=10003`的值， 缩小范围后再依次进行职位， 生日进行检索， 最终找到数据.
+
+## 1.2 索引的CRUD
+&emsp;&emsp;这部分直接贴语句:
+>index.sql
+{:.filename}
+{% highlight sql linenos%}
+-- 查看
+    SHOW INDEX FROM tableName;
+-- 新建
+    CREATE [UNIQUE] INDEX indexName ON tableName(colName(length));  --普通索引
+    ALTER TABLE tableName ADD INDEX [indexName] (colName(length));  --普通索引
+    ALTER TABLE tableName ADD UNIQUE [indexName] (colName(length));  --唯一索引
+    ALTER TABLE tableName ADD FULLTEXT [indexName] (colName(length));  --全文索引
+    ALTER TABLE tableName ADD PRIMARY KEY (colName(length));  --主键索引
+-- 删除
+    DROP INDEX [indexName] ON tableName;
+{% endhighlight %}
+<hr>
+
+&emsp;&emsp; 要强调的一点是， `索引长度(length)`表示的是字符类型通常不需要索引整个字符串， 它底层采用的是类似于字典树的结构， 会拆分每个字符进行索引， 因此可以指定索引的长度; 而对于整型字段， 这个长度是固定的， 不用指定.<br><br>
+&emsp;&emsp; 另外全文索引是用于在文章中搜索是否包含指定关键字的类似功能， 其底层结构并不是树或Hash表， 具体结构暂时还没研究过.
+
+## 1.3 以下字段需要建索引
+- 主键    (自动见索引，一般不需要关心)
+- 频繁查询的字段
+- 外键
+- WHERE字段
+- ORDER BY字段
+- GROUP BY字段
+
+## 1.4 以下字段不要建索引
+- 频繁更新的字段
+- WHERE使用不到的字段
+- 差异性低的字段
+
+<hr>
+
+# 2. SQL优化实例
+&emsp;&emsp; 建立1张测试表用于说明以下规则:
+>employees表
+{:.filename}
+{% highlight sql linenos%}
+CREATE TABLE `employees` (
+  `employee_id` int(6) NOT NULL AUTO_INCREMENT,   --主键
+  `first_name` varchar(20) DEFAULT NULL,
+  `last_name` varchar(25) DEFAULT NULL,
+  `email` varchar(25) DEFAULT NULL,
+  `phone_number` varchar(20) DEFAULT NULL,
+  `job_id` varchar(10) DEFAULT NULL,
+  `salary` double(10,2) DEFAULT NULL,
+  `commission_pct` double(4,2) DEFAULT NULL,
+  `manager_id` int(6) DEFAULT NULL,
+  `department_id` int(4) DEFAULT NULL,            --外键
+  `hiredate` datetime DEFAULT NULL,
+  PRIMARY KEY (`employee_id`),
+) ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=utf8;
+{% endhighlight %}
+
+## 2.1 SQL的等值查询
+&emsp;&emsp; 即查询条件WHERE后面仅跟`=`，这类查询能完美利用索引，因此比较高效；<br>
+假设要查询`employees`表中`department_id=80`, `commission_pct=0.40`, `salary=14000`的数据:
+### (1) 不建索引的情况
+
+>不建索引查询
+{:.filename}
+{% highlight sql linenos%}
+SELECT * 
+FROM employees
+WHERE department_id = 80
+AND commission_pct = 0.40
+AND salary = 14000;
+{% endhighlight %}
+
+![不建索引]({{ '/images/blog/4-2.png' | relative_url }})
+&emsp;&emsp; 此时`type`类型为`ALL`，表示全表扫描，是我们最不愿意看到的；
+
+
+<hr>
+
+
+### (2) 等值完整索引检索
+
+&emsp;&emsp; 首先按下列顺序创建索引`department_id`-->`commission_pct`-->`salary`，然后按以下几种方式进行查询:
+>创建索引
+{:.filename}
+{% highlight sql linenos%}
+CREATE INDEX idx_dept_comm_sal ON employees(department_id, commission_pct, salary);
+{% endhighlight %}
+
+>完整索引顺序查询
+{:.filename}
+{% highlight sql linenos%}
+SELECT * 
+FROM employees
+WHERE department_id = 80    --查询顺序和索引顺序完全一致
+AND commission_pct = 0.40
+AND salary = 14000;
+{% endhighlight %}
+
+>完整索引乱序查询
+{:.filename}
+{% highlight sql linenos%}
+SELECT * 
+FROM employees
+WHERE salary = 14000    --查询顺序和索引顺序不一致，然仍然是等值查询
+AND department_id = 80
+AND commission_pct = 0.40;
+{% endhighlight %}
+
+![完整索引查询]({{ '/images/blog/4-3.png' | relative_url }})
+&emsp;&emsp; 此时顺序和乱序查询的`type`类型都为`ref`(使用了非唯一索引)，并且`ref`为3个`const`，表示此时`SQL`是较为最完美的方式进行查询的；其中乱序查询仍为ref的原因是`MySQL`具有`自动优化`功能，将乱序查询的顺序调整为了顺序查询；由此可以看出对于等值的完整索引查询，顺序任意调整后的等价的。
+
+
+<hr>
+
+
+
+### (3) 等值残缺索引检索
+
+&emsp;&emsp; 比如已经建好了索引，并按以下几种方式进行查询:
+
+>残缺索引查询1
+{:.filename}
+{% highlight sql linenos%}
+EXPLAIN
+SELECT * 
+FROM employees  
+WHERE commission_pct = 0.40  --缺第一个索引字段
+AND salary = 14000;
+{% endhighlight %}
+
+![残缺索引查询1]({{ '/images/blog/4-4.png' | relative_url }})
+&emsp;&emsp; 发现去掉`department_id`首个索引后，整个SQL就变成`全表扫描`了(`ALL`)，原因很简单，根据前文`复合索引`的原理图，在建立好`复合索引`后，首先是要根据第一个索引字段进行初步搜索的，如果`SQL`中第一个筛选字段不是第一个索引字段，那么该索引整个就失效了。
+
+>残缺索引查询2
+{:.filename}
+{% highlight sql linenos%}
+EXPLAIN
+SELECT * 
+FROM employees
+WHERE department_id = 80  --缺第二个索引字段
+AND salary = 14000;
+{% endhighlight %}
+
+![残缺索引查询2]({{ '/images/blog/4-5.png' | relative_url }})
+&emsp;&emsp; 发现去掉`commission_pct`第二个索引后，`key_len`是5，表示只用到了一个索引字段，其实这里就是只用到了`department_id`，原因同理，在复合索引初步找到`department_id`后，再搜寻第二个字段发现没有了，因此后面的均失效。
+
+<hr>
+
+
+## 2.2 SQL的非等值查询
+
+&emsp;&emsp; 即查询条件WHERE后面跟`>`, `IS NULL`，这类查询通常只能使用到索引的排序功能，而不能用到检索<br>
+&emsp;&emsp; 非等值包括以下运算:
+- `>` `<` 
+- `!=`
+- `IS NULL`  /  `IS NOT NULL`
+- 任何`函数`操作后的索引
+<br>
+
+>非等值检索
+{:.filename}
+{% highlight sql linenos%}
+SELECT * 
+FROM employees
+WHERE department_id = 80
+AND commission_pct > 0.40
+AND salary = 14000;
+{% endhighlight %}
+
+![非等值检索]({{ '/images/blog/4-6.png' | relative_url }})
+&emsp;&emsp; 此时type类型为ref，但`key_len`是13，表示仅用到了前两个索引字段`department_id`和`commission_pct`，其中`department_id`用来检索，`commission_pct`仅用来排序；也很好理解，先用`department_id`进行第一轮筛选，然后根据`commission_pct`的索引来遍历所有 > 0.40的剩下数据；<br>
+&emsp;&emsp; 也就是说如果`SQL`中出现非等值索引，则后面的索引均失效，并且当前这个非等值索引也仅用来排序。
+
+<hr>
+
+
+## 2.3 SQL的覆盖索引
+
+&emsp;&emsp; 假如我们要查询的数据列正好就是`department_id`,`commission_pct`,`salary`这三列会发生什么呢？
+
+>覆盖索引
+{:.filename}
+{% highlight sql linenos%}
+EXPLAIN
+SELECT department_id, commission_pct, salary
+FROM employees;
+{% endhighlight %}
+
+&emsp;&emsp; 此时`type`类型为`index`，表示全索引扫描，此时虽然没有指定任何筛选条件但并非恶化到全表扫描，为什么呢？原因很简单，我要搜索的数据全在索引上了，就自然没有必要再去数据库里取数据了；
+
+<hr>
+
+
+## 2.4 SQL的LIKE查询
+
+&emsp;&emsp; 假如我们要查询的索引为字符型，需要使用LIKE，假设已经建立了另一个索引`last_name`:
+
+>LIKE检索1
+{:.filename}
+{% highlight sql linenos%}
+EXPLAIN
+SELECT * 
+FROM employees
+WHERE last_name LIKE 'A%';
+{% endhighlight %}
+
+![LIKE检索1]({{ '/images/blog/4-8.png' | relative_url }})
+&emsp;&emsp; 此时`type`类型为`range`，表示范围索引扫描，也就是用到了索引；接下来我们看看这种用法:
+
+>LIKE检索2
+{:.filename}
+{% highlight sql linenos%}
+EXPLAIN
+SELECT * 
+FROM employees
+WHERE last_name LIKE '%A%';
+{% endhighlight %}
+
+![LIKE检索2]({{ '/images/blog/4-9.png' | relative_url }})
+&emsp;&emsp; 此时降为了`全表扫描`；其原因是字符类型的索引比较特殊，它自身就是一个`复合索引`，底层的结构类似于`字典树`，根据字符一个一个进行构建，如果没有指定`首字符`将无法进行检索；`字典树`的内部原理如下图所示:<br>
+
+![字典树结构]({{ '/images/blog/4-10.png' | relative_url }})
+
+
+<hr>
+
+
+## 2.3 SQL的排序和分组
+
+&emsp;&emsp; 实际上分组之前必须排序，因此暂只讨论排序查询:
+
+>排序查询1
+{:.filename}
+{% highlight sql linenos%}
+EXPLAIN
+SELECT * 
+FROM employees
+WHERE department_id = 80
+AND commission_pct = 0.40
+ORDER BY salary;
+{% endhighlight %}
+
+![排序查询1]({{ '/images/blog/4-11.png' | relative_url }})
+&emsp;&emsp; 此时`type`类型为`ref`，`ken_len`为14，表示索引只用到了前两个(实际上排序还用到了`salary`索引进行排序)。
+
+>排序查询2
+{:.filename}
+{% highlight sql linenos%}
+EXPLAIN
+SELECT * 
+FROM employees
+WHERE department_id = 80
+AND salary = 14000
+ORDER commission_pct;
+{% endhighlight %}
+
+![排序查询2]({{ '/images/blog/4-12.png' | relative_url }})
+&emsp;&emsp; 此时`type`类型为`ref`，`ken_len`为5，只用到了第一个索引，原因和之前一样，中间阻断了。
+
+
+<hr>
+
+
+# 3. SQL优化总结
+>如何避免索引失效
+{:.filename}
+{% highlight sql linenos%}
+    --假如已经建立key1,key2,key3复合索引
+    --1.全值匹配性能最佳
+        SELECT * FROM user WHERE key1=1 AND key2=2 AND key3=3;
+    --2.最佳左前缀法则
+        --法则一：key1不能丢——直接失效
+        --法则二：中间最好不要断——部分失效
+        SELECT * FROM user WHERE key1=1;  --正确
+        SELECT * FROM user WHERE key1=1 AND key2=2; --正确
+        SELECT * FROM user WHERE key1=1 AND key2=2 AND key3=3; --正确(最优)
+        SELECT * FROM user WHERE key2=2;  --错误！ key1不能丢！
+        SELECT * FROM user WHERE key1=1 AND key3=3;  --不推荐！ 实际只使用了key1！
+    --3.不要在索引上进行计算、函数、类型转换
+        SELECT * FROM user WHERE func(key1)=1;  --错误，key1失效
+    --4.存储引擎不能使用索引中范围条件右边的列
+        SELECT * FROM user WHERE key1=1 AND key2>2 AND key3=3;  --此时key2性能降低，仅用于排序，不再用于查找； key3失效
+    --5.尽量使用覆盖索引(即索引列=查询列)
+        SELECT key1,key2,key3 FROM user WHERE key1=1;  --性能更优
+        SELECT * FROM user WHERE key1=1;               --性能较差
+    --6.mysql使用!=时无法使用索引
+        SELECT * FROM user WHERE key1!=1;   --key1失效
+    --7.IS NULL , IS NOT NULL无法使用索引
+        SELECT * FROM user WHERE key1 IS NULL;  --key1失效
+    --8.LIKE 无法使用索引
+        --临时假设key1是varchar类型
+        SELECT * FROM user WHERE key1 LIKE '%A%';  --key1失效，变为ALL
+        SELECT * FROM user WHERE key1 LIKE '%A';   --key1失效，变为ALL
+        SELECT * FROM user WHERE key1 LIKE 'A%';   --key1部分有效，变为range 
+        --如何实现'%A%'的功能？
+        --需要借助覆盖索引，将type降为index
+        SELECT key1,key2,key3 FROM key1 LIKE '%A%';  --正确
+        SELECT key3 FROM key1 LIKE '%A%';            --正确
+        SELECT key1,key3 FROM key1 LIKE '%A%';       --正确
+    --9.字符串不加单引号，索引失效
+        --临时假设key1是varchar类型
+        SELECT * FROM user WHERE key1='100';   --正确
+        SELECT * FROM user WHERE key1=100;     --错误，使用了mysql类型转换，索引失效
+    --10.少用OR，用来连接时索引失效 
+        SELECT * FROM user WHERE key1=1 OR key1=2; --key1失效
+    --11.排序和分组也要按顺序，并且升降不可颠倒
+        SELECT * FROM user WHERE age>20 ORDER BY age;  --正常
+        SELECT * FROM user WHERE age>20 ORDER BY age,birth;  --正常
+        SELECT * FROM user WHERE age>20 ORDER BY birth;  --产生using filesort，age不能丢，
+        SELECT * FROM user WHERE age>20 ORDER BY birth,age;  --产生using filesort，顺序不能反
+        SELECT * FROM user WHERE age>20 ORDER BY age ASC,birth DESC;  --产生using filesort，需要同升同降不可来回倒换
+
+{% endhighlight %}
