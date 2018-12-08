@@ -11,7 +11,6 @@ baseurl:
 
 social:
   github: a120209520
-  rss: feed.xml
 
 share:
   facebook: true

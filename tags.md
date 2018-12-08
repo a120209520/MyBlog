@@ -7,7 +7,7 @@ title: Tags
 {% capture site_tags %}
   [
   {% for tag in site.tags %}
-    {"text":"{{ tag[0] }}","size":{{ tag[1].size }}, "url":"{{ site.url }}/tag/{{tag[0]}}"}
+    {"text":"{{ tag[0] }}","size":{{ tag[1].size }}, "url":"{{ site.url }}/ta1g/{{tag[0]}}"}
   {% unless forloop.last %},{% endunless %}
   {% endfor %}
   ]
